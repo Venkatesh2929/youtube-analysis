@@ -1,0 +1,281 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>YouTube Data Analysis</title>
+    <link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/bootstrap/4.5.2/css/bootstrap.min.css">
+    <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+    <style>
+        body {
+            background-color: #f8f9fa;
+        }
+        .header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 20px;
+            background-color: #343a40;
+            color: white;
+        }
+        .container-fluid {
+            margin-top: 20px;
+        }
+        .sidebar {
+            background-color: #ffffff;
+            padding: 20px;
+            border-right: 1px solid #dee2e6;
+        }
+        .main-content {
+            padding: 20px;
+        }
+        .form-group {
+            margin-bottom: 15px;
+        }
+        #chart {
+            margin-top: 30px;
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>YouTube Data Analysis</h1>
+        <button id="getData" class="btn btn-primary">Get Data</button>
+    </div>
+    <div class="container-fluid">
+        <div class="row">
+            <div class="col-md-3 sidebar">
+                <div class="form-group">
+                    <label for="channels">Channel:</label>
+                    <select id="channels" class="form-control"></select>
+                </div>
+                <div class="form-group">
+                    <input type="radio" id="channelStats" name="dataType" value="channel" checked>
+                    <label for="channelStats">Channel Statistics</label>
+                    <input type="radio" id="videoStats" name="dataType" value="video">
+                    <label for="videoStats">Video Statistics</label>
+                </div>
+                <div class="form-group" id="channelMetricsDiv">
+                    <label for="channelMetrics">Metrics:</label>
+                    <select id="channelMetrics" class="form-control">
+                        <option value="view_Count">View Count</option>
+                        <option value="subscriber_Count">Subscriber Count</option>
+                        <option value="video_Count">Video Count</option>
+                    </select>
+                </div>
+                <div class="form-group" id="videoMetricsDiv" style="display: none;">
+                    <label for="videoMetrics">Metrics:</label>
+                    <select id="videoMetrics" class="form-control">
+                        <option value="ViewCount">Video View Count</option>
+                        <option value="LikeCount">Like Count</option>
+                        <option value="FavoriteCount">Favorite Count</option>
+                        <option value="CommentCount">Comment Count</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label for="chartType">Chart Type:</label>
+                    <select id="chartType" class="form-control">
+                        <option value="line">Line Chart</option>
+                        <option value="bar">Bar Chart</option>
+                    </select>
+                </div>
+                <button id="analyze" class="btn btn-success">Analyze</button>
+            </div>
+            <div class="col-md-9 main-content">
+                <div class="row">
+                    <div class="col-md-6">
+                        <div class="form-group">
+                            <label for="dateFrom">Date Ran From:</label>
+                            <select id="dateFrom" class="form-control"></select>
+                        </div>
+                    </div>
+                    <div class="col-md-6">
+                        <div class="form-group">
+                            <label for="dateTo">Date Ran To:</label>
+                            <select id="dateTo" class="form-control"></select>
+                        </div>
+                    </div>
+                </div>
+                <div id="chart">
+                    <canvas id="chartCanvas"></canvas>
+                </div>
+                <div id="legend"></div>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script>
+        $(document).ready(function() {
+            // Load channels into dropdown
+            $.get('/get_channels', function(data) {
+                console.log("Channels:", data); // Debugging: Print received channels
+                data.forEach(function(channel) {
+                    $('#channels').append(`<option value="${channel.channel_name}">${channel.channel_name}</option>`);
+                });
+            });
+
+            // Load dates into dropdown based on selected channel
+            $('#channels').change(function() {
+                let channel = $(this).val();
+                console.log("Selected channel:", channel); // Debugging: Print selected channel
+                $.get(`/get_dates/${channel}`, function(data) {
+                    console.log("Received dates:", data); // Debugging: Print received dates
+                    $('#dateFrom, #dateTo').empty();
+                    data.forEach(function(date) {
+                        $('#dateFrom').append(`<option value="${date.date_Ran}">${date.date_Ran}</option>`);
+                        $('#dateTo').append(`<option value="${date.date_Ran}">${date.date_Ran}</option>`);
+                    });
+                });
+            });
+
+            // Toggle metric dropdowns based on selected radio button
+            $('input[name="dataType"]').change(function() {
+                if ($('#channelStats').is(':checked')) {
+                    $('#channelMetricsDiv').show();
+                    $('#videoMetricsDiv').hide();
+                } else {
+                    $('#channelMetricsDiv').hide();
+                    $('#videoMetricsDiv').show();
+                }
+            });
+
+            // Get data button click event
+            $('#getData').click(function() {
+                $.ajax({
+                    url: '/get_data',
+                    type: 'POST',
+                    contentType: 'application/json',
+                    data: JSON.stringify({ channels: ['PCSGlobalPrivateLimited', 'randomchannel3020'] }),
+                    success: function(response) {
+                        alert('Data retrieved successfully');
+                    },
+                    error: function(xhr, status, error) {
+                        alert(`Error: ${xhr.status} - ${xhr.responseText}`);
+                    }
+                });
+            });
+
+            // Analyze button click event
+            $('#analyze').click(function() {
+            let channel = $('#channels').val();
+            let dateFrom = $('#dateFrom').val();
+            let dateTo = $('#dateTo').val();
+            let metric;
+            if ($('#channelStats').is(':checked')) {
+                metric = $('#channelMetrics').val();
+            } else {
+                metric = $('#videoMetrics').val();
+            }
+            let chartType = $('#chartType').val();
+
+            // Convert date format
+            dateFrom = new Date(dateFrom).toISOString().split('T')[0];
+            dateTo = new Date(dateTo).toISOString().split('T')[0];
+
+            $.ajax({
+                url: '/get_data_range',
+                type: 'POST',
+                contentType: 'application/json',
+                data: JSON.stringify({ channel: channel, date_from: dateFrom, date_to: dateTo, metric: metric }),
+                success: function(data) {
+                    console.log("Data received:", data);  // Debugging: Print received data
+                    
+                    $('#chart').empty();
+                    let canvas = $('<canvas id="chartCanvas"></canvas>').appendTo('#chart');
+                    let ctx = canvas[0].getContext('2d');
+                    let labels = [...new Set(data.map(item => item.date_Ran || item.DateRan))];
+                    console.log("Labels:", labels);  // Debugging: Print labels
+
+                    if (metric === "view_Count" || metric === "subscriber_Count" || metric === "video_Count") {
+                        let values = data.map(item => item[metric]);
+                        console.log("Values:", values);  // Debugging: Print values
+
+                        new Chart(ctx, {
+                            type: chartType,
+                            data: {
+                                labels: labels,
+                                datasets: [{
+                                    label: metric,
+                                    data: values,
+                                    backgroundColor: 'rgba(0, 123, 255, 0.5)',
+                                    borderColor: 'rgba(0, 123, 255, 1)',
+                                    borderWidth: 1
+                                }]
+                            },
+                            options: {
+                                scales: {
+                                    y: {
+                                        beginAtZero: true
+                                    }
+                                }
+                            }
+                        });
+
+                        $('#legend').empty().append('<h4>Legend:</h4>');
+                        $('#legend').append(`<p>${metric}</p>`);
+                    } else {
+                        let letterMapping = {};
+                        data.forEach(item => {
+                            if (!letterMapping[item.Letter]) {
+                                letterMapping[item.Letter] = item.VideoTitle;
+                            }
+                        });
+                        console.log("Letter Mapping:", letterMapping);  // Debugging: Print letter mapping
+
+                        let colors = [
+                            'rgba(255, 99, 132, 0.5)', // Red
+                            'rgba(54, 162, 235, 0.5)', // Blue
+                            'rgba(75, 192, 192, 0.5)', // Green
+                            'rgba(255, 206, 86, 0.5)', // Yellow
+                            'rgba(153, 102, 255, 0.5)', // Purple
+                            'rgba(255, 159, 64, 0.5)', // Orange
+                            'rgba(99, 132, 255, 0.5)', // Light Blue
+                            'rgba(162, 235, 54, 0.5)', // Light Green
+                            'rgba(192, 192, 75, 0.5)', // Light Yellow
+                            'rgba(206, 86, 255, 0.5)'  // Light Purple
+                        ];
+
+                        let borderColors = colors.map(color => color.replace('0.5', '1'));
+
+                        let datasets = Object.keys(letterMapping).map((letter, index) => {
+                            let videoData = data.filter(item => item.Letter === letter);
+                            return {
+                                label: letter,
+                                data: videoData.map(item => item[metric]),
+                                backgroundColor: colors[index % colors.length],
+                                borderColor: borderColors[index % borderColors.length],
+                                borderWidth: 1,
+                                fill: false, // Ensure the line is not filled
+                            };
+                        });
+                        console.log("Datasets:", datasets);  // Debugging: Print datasets
+
+                        new Chart(ctx, {
+                            type: chartType,
+                            data: {
+                                labels: labels,
+                                datasets: datasets
+                            },
+                            options: {
+                                scales: {
+                                    y: {
+                                        beginAtZero: true
+                                    }
+                                }
+                            }
+                        });
+
+                        $('#legend').empty().append('<h4>Legend:</h4>');
+                        Object.keys(letterMapping).forEach(letter => {
+                            $('#legend').append(`<p>${letter}: ${letterMapping[letter]}</p>`);
+                        });
+                    }
+                },
+                error: function(xhr, status, error) {
+                    alert(`Error: ${xhr.status} - ${xhr.responseText}`);
+                }
+            });
+        });
+        });
+    </script>
+</body>
+</html>
